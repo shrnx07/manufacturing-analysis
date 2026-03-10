@@ -1,0 +1,104 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2868
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 -- Query 1: 10 worst single-month drops in durable goods orders\
+SELECT \
+    date,\
+    durable_goods_orders,\
+    ROUND(CAST(dgo_mom AS REAL), 2) as mom_pct_change,\
+    CASE \
+        WHEN CAST(dgo_mom AS REAL) <= -15 THEN 'Severe Drop'\
+        WHEN CAST(dgo_mom AS REAL) <= -10 THEN 'Major Drop'\
+        WHEN CAST(dgo_mom AS REAL) <= -5  THEN 'Moderate Drop'\
+        ELSE 'Minor Drop'\
+    END as severity\
+FROM manufacturing_combined\
+WHERE dgo_mom IS NOT NULL\
+ORDER BY CAST(dgo_mom AS REAL) ASC\
+LIMIT 10;\
+\
+\
+-- Query 2: YoY performance by decade\
+SELECT\
+    CASE\
+        WHEN CAST(strftime('%Y', date) AS INTEGER) BETWEEN 1992 AND 1999 THEN '1990s'\
+        WHEN CAST(strftime('%Y', date) AS INTEGER) BETWEEN 2000 AND 2009 THEN '2000s'\
+        WHEN CAST(strftime('%Y', date) AS INTEGER) BETWEEN 2010 AND 2019 THEN '2010s'\
+        WHEN CAST(strftime('%Y', date) AS INTEGER) BETWEEN 2020 AND 2025 THEN '2020s'\
+    END as decade,\
+    ROUND(AVG(CAST(dgo_yoy AS REAL)), 2) as avg_yoy_growth,\
+    ROUND(MAX(CAST(dgo_yoy AS REAL)), 2) as best_month,\
+    ROUND(MIN(CAST(dgo_yoy AS REAL)), 2) as worst_month,\
+    COUNT(*) as months\
+FROM manufacturing_combined\
+WHERE dgo_yoy IS NOT NULL\
+GROUP BY decade\
+ORDER BY decade;\
+\
+-- Query 3: Inventory stress periods ranked\
+SELECT\
+    date,\
+    ROUND(CAST(orders_to_inventory AS REAL), 3) as oti_ratio,\
+    ROUND(CAST(total_mfg_orders AS REAL), 0) as orders,\
+    ROUND(CAST(total_mfg_inventories AS REAL), 0) as inventories,\
+    CASE\
+        WHEN CAST(orders_to_inventory AS REAL) >= 0.80 THEN 'Boom'\
+        WHEN CAST(orders_to_inventory AS REAL) >= 0.72 THEN 'Healthy'\
+        WHEN CAST(orders_to_inventory AS REAL) >= 0.60 THEN 'Caution'\
+        ELSE 'Stress'\
+    END as demand_zone\
+FROM manufacturing_tableau\
+WHERE orders_to_inventory IS NOT NULL\
+ORDER BY CAST(orders_to_inventory AS REAL) ASC\
+LIMIT 15;\
+\
+-- Query 4: Average metrics by economic period\
+SELECT\
+    period_label,\
+    COUNT(*) as months,\
+    ROUND(AVG(CAST(durable_goods_orders AS REAL)), 0) as avg_durable_orders,\
+    ROUND(AVG(CAST(orders_to_inventory AS REAL)), 3) as avg_oti_ratio,\
+    ROUND(AVG(CAST(ppi AS REAL)), 1) as avg_ppi,\
+    ROUND(MIN(CAST(dgo_yoy AS REAL)), 1) as worst_yoy_growth\
+FROM manufacturing_tableau\
+WHERE period_label IS NOT NULL\
+GROUP BY period_label\
+ORDER BY avg_oti_ratio ASC;\
+\
+-- Query 5: Rolling 12 month average orders vs PPI relationship\
+SELECT\
+    date,\
+    ROUND(CAST(dgo_12m_avg AS REAL), 0) as orders_12m_avg,\
+    ROUND(CAST(ppi AS REAL), 1) as ppi,\
+    ROUND(CAST(dgo_yoy AS REAL), 1) as orders_yoy,\
+    ROUND(CAST(ppi_yoy AS REAL), 1) as ppi_yoy,\
+    CASE\
+        WHEN CAST(dgo_yoy AS REAL) > 0 \
+             AND CAST(ppi_yoy AS REAL) > 0 THEN 'Both Growing'\
+        WHEN CAST(dgo_yoy AS REAL) > 0 \
+             AND CAST(ppi_yoy AS REAL) <= 0 THEN 'Demand Up Cost Down'\
+        WHEN CAST(dgo_yoy AS REAL) <= 0 \
+             AND CAST(ppi_yoy AS REAL) > 0 THEN 'Demand Down Cost Up'\
+        ELSE 'Both Declining'\
+    END as market_regime\
+FROM manufacturing_tableau\
+WHERE dgo_yoy IS NOT NULL AND ppi_yoy IS NOT NULL\
+ORDER BY date;\
+\
+-- Query 6: Top 10 fastest recovery months after a major drop\
+SELECT\
+    date,\
+    ROUND(CAST(durable_goods_orders AS REAL), 0) as orders,\
+    ROUND(\
+        (CAST(durable_goods_orders AS REAL) - \
+         LAG(CAST(durable_goods_orders AS REAL)) OVER (ORDER BY date)) /\
+         LAG(CAST(durable_goods_orders AS REAL)) OVER (ORDER BY date) * 100\
+    , 2) as mom_pct_change,\
+    period_label\
+FROM manufacturing_tableau\
+ORDER BY mom_pct_change DESC\
+LIMIT 10;}
